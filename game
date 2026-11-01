@@ -1,0 +1,396 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Math Bird</title>
+<style>
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #dff5ff;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+}
+
+#game {
+  width: min(95vw, 800px);
+  background: white;
+  border-radius: 18px;
+  padding: 16px;
+  text-align: center;
+  box-shadow: 0 8px 25px #0002;
+}
+
+#gameArea {
+  position: relative;
+}
+
+canvas {
+  width: 100%;
+  background: #87ceeb;
+  border-radius: 12px;
+  display: block;
+}
+
+#countdown {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 100px;
+  font-weight: bold;
+  color: white;
+  text-shadow: 3px 3px 5px #333;
+  pointer-events: none;
+}
+
+#countdown[hidden] {
+  display: none;
+}
+
+button, input {
+  font-size: 18px;
+  padding: 10px;
+  border-radius: 8px;
+  border: 2px solid #ccc;
+}
+
+button {
+  cursor: pointer;
+  background: #4caf50;
+  color: white;
+  border: none;
+}
+
+#questionBox {
+  margin: 12px;
+}
+
+#question {
+  font-size: 28px;
+  font-weight: bold;
+}
+
+#message {
+  min-height: 24px;
+  font-weight: bold;
+}
+</style>
+</head>
+<body>
+<div id="game">
+  <h1>🐦 Math Bird 🍎</h1>
+  <p>Press SPACE or tap to fly and collect apples!</p>
+
+  <div id="gameArea">
+    <canvas id="canvas" width="800" height="400"></canvas>
+    <div id="countdown" hidden></div>
+  </div>
+
+  <p>Score: <span id="score">0</span> / 10</p>
+
+  <div id="questionBox" hidden>
+    <div id="question"></div>
+    <input id="answer" type="number" placeholder="Your answer">
+    <button id="submitAnswer">Submit</button>
+  </div>
+
+  <p id="message">Press Start to play!</p>
+  <button id="start">Start Game</button>
+</div>
+
+<script>
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+const scoreText = document.getElementById("score");
+const questionBox = document.getElementById("questionBox");
+const questionText = document.getElementById("question");
+const answerInput = document.getElementById("answer");
+const submitAnswerButton = document.getElementById("submitAnswer");
+const message = document.getElementById("message");
+const startButton = document.getElementById("start");
+const countdown = document.getElementById("countdown");
+
+let bird = { x: 120, y: 200, vy: 0 };
+let apples = [];
+let score = 0;
+let frame = 0;
+let running = false;
+let paused = false;
+let correctAnswer = 0;
+let countdownTimer = null;
+let animationFrame = null;
+
+const TARGET_SCORE = 10;
+const GRAVITY = 0.04;
+const FLAP_STRENGTH = -3.5;
+const MAX_FALL_SPEED = 0.8;
+const APPLE_SPEED = 1.5;
+const APPLE_INTERVAL = 500;
+
+function startGame() {
+  clearInterval(countdownTimer);
+  cancelAnimationFrame(animationFrame);
+
+  bird = { x: 120, y: 200, vy: 0 };
+  apples = [];
+  score = 0;
+  frame = 0;
+  running = false;
+  paused = true;
+
+  scoreText.textContent = score;
+  questionBox.hidden = true;
+  startButton.hidden = true;
+  startButton.textContent = "Play Again";
+  message.textContent = "Get ready!";
+
+  countdown.hidden = false;
+  let count = 3;
+  countdown.textContent = count;
+
+  draw();
+
+  countdownTimer = setInterval(() => {
+    if (count > 1) {
+      count--;
+      countdown.textContent = count;
+    } else {
+      clearInterval(countdownTimer);
+      countdown.hidden = true;
+
+      running = true;
+      paused = false;
+      bird.vy = 0;
+
+      message.textContent = "Collect apples and solve math questions!";
+      animationFrame = requestAnimationFrame(loop);
+    }
+  }, 1000);
+}
+
+function flap() {
+  if (running && !paused) {
+    bird.vy = FLAP_STRENGTH;
+  }
+}
+
+document.addEventListener("keydown", event => {
+  if (event.code === "Space") {
+    event.preventDefault();
+    flap();
+  }
+});
+
+canvas.addEventListener("click", flap);
+
+canvas.addEventListener("touchstart", event => {
+  event.preventDefault();
+  flap();
+}, { passive: false });
+
+startButton.addEventListener("click", startGame);
+submitAnswerButton.addEventListener("click", checkAnswer);
+
+function makeQuestion() {
+  const a = Math.floor(Math.random() * 10) + 1;
+  const b = Math.floor(Math.random() * 10) + 1;
+  const op = ["+", "-", "×"][Math.floor(Math.random() * 3)];
+
+  let x = a;
+  let y = b;
+
+  if (op === "-" && x < y) {
+    [x, y] = [y, x];
+  }
+
+  correctAnswer =
+    op === "+" ? x + y :
+    op === "-" ? x - y :
+    x * y;
+
+  questionText.textContent = `${x} ${op} ${y} = ?`;
+  answerInput.value = "";
+  questionBox.hidden = false;
+  paused = true;
+  answerInput.focus();
+}
+
+function checkAnswer() {
+  if (!running || !paused || answerInput.value.trim() === "") {
+    return;
+  }
+
+  if (Number(answerInput.value) === correctAnswer) {
+    score++;
+    scoreText.textContent = score;
+    questionBox.hidden = true;
+    apples = [];
+
+    if (score >= TARGET_SCORE) {
+      endGame(true);
+      return;
+    }
+
+    message.textContent = "Correct! Great job! 🎉";
+    paused = false;
+    animationFrame = requestAnimationFrame(loop);
+  } else {
+    message.textContent = "Try again! You can do it!";
+  }
+}
+
+function endGame(won) {
+  running = false;
+  paused = true;
+  cancelAnimationFrame(animationFrame);
+  clearInterval(countdownTimer);
+
+  questionBox.hidden = true;
+  countdown.hidden = true;
+  startButton.hidden = false;
+  startButton.textContent = "Play Again";
+
+  if (won) {
+    message.textContent = "🎉 Congratulations! You reached 10 points! 🎉";
+  } else {
+    message.textContent = "Game over! The bird touched the top or ground. Try again!";
+  }
+
+  draw();
+}
+
+answerInput.addEventListener("keydown", event => {
+  if (event.key === "Enter") {
+    checkAnswer();
+  }
+});
+
+function loop() {
+  if (!running || paused) {
+    return;
+  }
+
+  frame++;
+
+  bird.vy += GRAVITY;
+  bird.vy = Math.min(bird.vy, MAX_FALL_SPEED);
+  bird.y += bird.vy;
+
+  if (bird.y - 17 <= 0 || bird.y + 17 >= 380) {
+    endGame(false);
+    return;
+  }
+
+  if (frame % APPLE_INTERVAL === 0 && apples.length === 0) {
+    apples.push({
+      x: 800,
+      y: 90 + Math.random() * 240
+    });
+  }
+
+  apples.forEach(apple => {
+    apple.x -= APPLE_SPEED;
+  });
+
+  for (let i = 0; i < apples.length; i++) {
+    const apple = apples[i];
+    const hit =
+      Math.abs(apple.x - bird.x) < 35 &&
+      Math.abs(apple.y - bird.y) < 35;
+
+    if (hit) {
+      apples.splice(i, 1);
+      makeQuestion();
+      break;
+    }
+  }
+
+  apples = apples.filter(apple => apple.x > -40);
+
+  draw();
+
+  if (running && !paused) {
+    animationFrame = requestAnimationFrame(loop);
+  }
+}
+
+function drawBird() {
+  ctx.save();
+  ctx.translate(bird.x, bird.y);
+
+  ctx.fillStyle = "#ffd43b";
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 22, 17, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "#f0a500";
+  ctx.beginPath();
+  ctx.ellipse(-6, 5, 10, 7, -0.4, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "white";
+  ctx.beginPath();
+  ctx.arc(10, -6, 6, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "black";
+  ctx.beginPath();
+  ctx.arc(12, -6, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "#ff7b00";
+  ctx.beginPath();
+  ctx.moveTo(18, 0);
+  ctx.lineTo(30, -5);
+  ctx.lineTo(30, 5);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function draw() {
+  ctx.clearRect(0, 0, 800, 400);
+
+  ctx.fillStyle = "white";
+  ctx.beginPath();
+  ctx.arc(150, 70, 25, 0, Math.PI * 2);
+  ctx.arc(180, 70, 35, 0, Math.PI * 2);
+  ctx.arc(215, 70, 25, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.arc(550, 120, 20, 0, Math.PI * 2);
+  ctx.arc(580, 120, 30, 0, Math.PI * 2);
+  ctx.arc(610, 120, 20, 0, Math.PI * 2);
+  ctx.fill();
+
+  apples.forEach(apple => {
+    ctx.font = "36px Arial";
+    ctx.fillText("🍎", apple.x - 18, apple.y + 12);
+  });
+
+  drawBird();
+
+  ctx.fillStyle = "#d6b36a";
+  ctx.fillRect(0, 380, 800, 20);
+
+  ctx.fillStyle = "#55aa44";
+  ctx.fillRect(0, 380, 800, 5);
+}
+
+draw();
+</script>
+</body>
+</html>
